@@ -84,7 +84,7 @@ app.put('/people/:id', async (req, res) => {
 });
 
 // Delete
-app.delete('/people/id', async (req, res) => {
+app.delete('/people/:id', async (req, res) => {
     try {
         res.json(await People.findByIdAndDelete(req.params.id));
     } catch (error) {
