@@ -3,11 +3,18 @@ const express = require('express');
 const mongoose = require('mongoose');
 const morgan = require('morgan');
 const cors = require('cors');
+const admin = require('firebase-admin');
 // Initialize the Express App
 const app = express();
 
 // Configure App Settings
 require('dotenv').config();
+
+
+admin.initializeApp({
+  credential: admin.credential.cert(require('./firebase-service-key.json'))
+});
+
 const { PORT = 4000, MONGODB_URL } = process.env;
 
 
@@ -26,7 +33,8 @@ mongoose.connection
 const peopleSchema = new mongoose.Schema({
     name: String,
     image: String,
-    title: String
+    title: String,
+    googleId: String
 }, { timestamps: true });
 
 
@@ -44,6 +52,31 @@ app.use(express.json());
 // app.use(express.urlencoded({ extended: fasle }))  
 // ^~~~ this also creates req.bdoy but only when express is serving HTML 
 
+// Authorization middleaware
+app.use(async (req, res, next) => {
+    const token = req.get('Authorization');
+    if(token) {
+            try {
+                  const user =  await admin.auth().verifyIdToken(token.replace('Bearer ', ""));
+            req.user = user;
+            } catch (error) {
+                req.user = null;
+            }
+          
+    } else {
+        req.user = null;
+    }
+    next();
+});
+
+function isAuthenticated(req, res ,next) {
+    if(!req.user) {
+     return res.status(401).json({message: "you must be logged in"});
+    } else {
+        return next();
+    }
+}
+
 
 
 
@@ -53,17 +86,19 @@ app.get("/", (req, res) => {
 });
 
 // Index
-app.get('/people', async (req, res) => {
+app.get('/people', isAuthenticated, async (req, res) => {
     try {
-        res.json( await People.find({}));
+        const googleId = req.user.uid;
+        res.json( await People.find({ googleId }));
     } catch (error) {
         console.log('error: ', error);
         res.json({error: 'something went wrong - check console'});
     }
 });
 // Create
-app.post('/people', async (req, res) => {
+app.post('/people', isAuthenticated, async (req, res) => {
     try {
+        req.body.googleId = req.user.uid;
         res.json(await People.create(req.body)); 
     } catch (error) {
         console.log('error: ', error);
@@ -71,7 +106,7 @@ app.post('/people', async (req, res) => {
     }
 });
 // Update
-app.put('/people/:id', async (req, res) => {
+app.put('/people/:id', isAuthenticated, async (req, res) => {
     try {
         res.json(await People.findByIdAndUpdate(
             req.params.id, 
@@ -84,7 +119,7 @@ app.put('/people/:id', async (req, res) => {
 });
 
 // Delete
-app.delete('/people/:id', async (req, res) => {
+app.delete('/people/:id', isAuthenticated, async (req, res) => {
     try {
         res.json(await People.findByIdAndDelete(req.params.id));
     } catch (error) {
